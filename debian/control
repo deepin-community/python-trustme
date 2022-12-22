@@ -1,0 +1,24 @@
+Source: python-trustme
+Section: python
+Priority: optional
+Standards-Version: 4.2.1.2
+Maintainer: Robie Basak <robie@justgohome.co.uk>
+Build-Depends: debhelper (>= 9~),
+               debhelper-compat (= 13),
+               dh-python,
+               python3,
+               python3-idna,
+               python3-openssl,
+               python3-pytest,
+               python3-service-identity,
+               python3-setuptools
+X-Python3-Version: all
+Homepage: https://github.com/python-trio/trustme
+
+Package: python3-trustme
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}
+Description: fake certificate authority for test use
+ trustme is a tiny Python package that gives you a fake certificate authority
+ (CA) that you can use to generate fake TLS certificates to use in tests. Its
+ only useful purpose is as a dependency of test suites.

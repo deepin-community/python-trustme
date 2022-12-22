@@ -1,0 +1,35 @@
+python-trustme (0.9.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Use debhelper-compat and bump to 13.
+
+ -- Robie Basak <robie@justgohome.co.uk>  Sun, 07 Nov 2021 20:24:40 +0000
+
+python-trustme (0.6.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * d/p/keysize: drop: applied upstream.
+
+ -- Robie Basak <robie@justgohome.co.uk>  Sun, 23 Feb 2020 17:09:27 +0000
+
+python-trustme (0.4.0-3) unstable; urgency=medium
+
+  * d/p/keysize: bump test key sizes to 2048 to fulfil Debian's new default
+    requirement. This fixes another FTBFS due to test failure in the case that
+    the openssl binary package is installed, which is not a build dependency,
+    but apparently the buildds have it by default. Closes: #926652.
+
+ -- Robie Basak <robie@justgohome.co.uk>  Sat, 13 Apr 2019 17:30:20 +0100
+
+python-trustme (0.4.0-2) unstable; urgency=medium
+
+  * Explicitly build-depend on python3-idna to fix FTBFS.
+    Closes: #925566.
+
+ -- Robie Basak <robie@justgohome.co.uk>  Tue, 26 Mar 2019 23:22:42 +0000
+
+python-trustme (0.4.0-1) unstable; urgency=low
+
+  * Initial release. Closes: #910951.
+
+ -- Robie Basak <robie@justgohome.co.uk>  Sat, 13 Oct 2018 22:48:59 +0100
