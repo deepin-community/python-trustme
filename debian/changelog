@@ -1,3 +1,10 @@
+python-trustme (0.9.0-1.1) unstable; urgency=medium
+
+  * Non-maintainer Upload.
+  * Drop deprecates "X-Python3-Version: all", fixes FTBFS (Closes: #1022394)
+
+ -- Nilesh Patra <nilesh@debian.org>  Sat, 29 Oct 2022 20:58:46 +0530
+
 python-trustme (0.9.0-1) unstable; urgency=medium
 
   * New upstream release.
