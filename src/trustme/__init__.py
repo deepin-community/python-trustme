@@ -1,19 +1,19 @@
-# -*- coding: utf-8 -*-
-
+from __future__ import annotations
 import datetime
-import ssl
-from base64 import urlsafe_b64encode
-from tempfile import NamedTemporaryFile
-from contextlib import contextmanager
-import os
-
 import ipaddress
-import idna  # type: ignore[import]
+import os
+import ssl
+from enum import Enum
+from base64 import urlsafe_b64encode
+from contextlib import contextmanager
+from tempfile import NamedTemporaryFile
+from typing import Generator, List, Optional, Union, TYPE_CHECKING
+
+import idna
 
 from cryptography import x509
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from cryptography.hazmat.primitives.serialization import (
     PrivateFormat, NoEncryption
 )
@@ -23,25 +23,12 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 from ._version import __version__
 
-TYPE_CHECKING = False
 if TYPE_CHECKING:  # pragma: no cover
-    from typing import Generator, List, Optional, Text, Union
-
     import OpenSSL.SSL
+    CERTIFICATE_PUBLIC_KEY_TYPES = Union[rsa.RSAPublicKey, ec.EllipticCurvePublicKey]
+    CERTIFICATE_PRIVATE_KEY_TYPES = Union[rsa.RSAPrivateKey, ec.EllipticCurvePrivateKey]
 
 __all__ = ["CA"]
-
-# Python 2/3 annoyingness
-try:
-    unicode
-except NameError:
-    unicode = str
-
-# On my laptop, making a CA + server certificate using 2048 bit keys takes ~160
-# ms, and using 4096 bit keys takes ~2 seconds. We want tests to run in 160 ms,
-# not 2 seconds. And we can't go lower, since Debian (and probably others)
-# by default reject any keys with <2048 bits (see #45).
-_KEY_SIZE = 2048
 
 # Default certificate expiry date:
 # OpenSSL on Windows fails if you try to give it a date after
@@ -52,12 +39,11 @@ _KEY_SIZE = 2048
 #   https://github.com/pyca/cryptography/pull/4658
 DEFAULT_EXPIRY = datetime.datetime(2038, 1, 1)
 
-def _name(name, organization_name=None, common_name=None):
-    # type: (Text, Optional[Text], Optional[Text]) -> x509.Name
+def _name(name: str, organization_name: Optional[str] = None, common_name: Optional[str] = None) -> x509.Name:
     name_pieces = [
         x509.NameAttribute(
             NameOID.ORGANIZATION_NAME,
-            organization_name or u"trustme v{}".format(__version__),
+            organization_name or f"trustme v{__version__}",
         ),
         x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, name),
     ]
@@ -68,18 +54,20 @@ def _name(name, organization_name=None, common_name=None):
     return x509.Name(name_pieces)
 
 
-def random_text():
-    # type: () -> Text
+def random_text() -> str:
     return urlsafe_b64encode(os.urandom(12)).decode("ascii")
 
 
-def _smells_like_pyopenssl(ctx):
-    # type: (object) -> bool
+def _smells_like_pyopenssl(ctx: object) -> bool:
     return getattr(ctx, "__module__", "").startswith("OpenSSL")  # type: ignore[no-any-return]
 
 
-def _cert_builder_common(subject, issuer, public_key, not_after=None):
-    # type: (x509.Name, x509.Name, rsa.RSAPublicKey, Optional[datetime.datetime]) -> x509.CertificateBuilder
+def _cert_builder_common(
+    subject: x509.Name,
+    issuer: x509.Name,
+    public_key: CERTIFICATE_PUBLIC_KEY_TYPES,
+    not_after: Optional[datetime.datetime] = None,
+) -> x509.CertificateBuilder:
     not_after = not_after if not_after else DEFAULT_EXPIRY
     return (
         x509.CertificateBuilder()
@@ -96,8 +84,7 @@ def _cert_builder_common(subject, issuer, public_key, not_after=None):
     )
 
 
-def _identity_string_to_x509(identity):
-    # type: (Text) -> x509.GeneralName
+def _identity_string_to_x509(identity: str) -> x509.GeneralName:
     # Because we are a DWIM library for lazy slackers, we cheerfully pervert
     # the cryptography library's carefully type-safe API, and silently DTRT
     # for any of the following identity types:
@@ -114,10 +101,10 @@ def _identity_string_to_x509(identity):
     # - "example@example.org"
     #
     # plus wildcard variants of the identities.
-    if not isinstance(identity, unicode):
-        raise TypeError("identities must be text (unicode on py2, str on py3)")
+    if not isinstance(identity, str):
+        raise TypeError("identities must be str")
 
-    if u"@" in identity:
+    if "@" in identity:
         return x509.RFC822Name(identity)
 
     # Have to try ip_address first, because ip_network("127.0.0.1") is
@@ -142,7 +129,7 @@ def _identity_string_to_x509(identity):
     return x509.DNSName(alabel)
 
 
-class Blob(object):
+class Blob:
     """A convenience wrapper for a blob of bytes.
 
     This type has no public constructor. They're used to provide a handy
@@ -150,24 +137,21 @@ class Blob(object):
     `CA.cert_pem` or `LeafCert.private_key_and_cert_chain_pem`.
 
     """
-    def __init__(self, data):
-        # type: (bytes) -> None
+    def __init__(self, data: bytes) -> None:
         self._data = data
 
-    def bytes(self):
-        # type: () -> bytes
+    def bytes(self) -> bytes:
         """Returns the data as a `bytes` object.
 
         """
         return self._data
 
-    def write_to_path(self, path, append=False):
-        # type: (str, bool) -> None
+    def write_to_path(self, path: Union[str, "os.PathLike[str]"], append: bool = False) -> None:
         """Writes the data to the file at the given path.
 
         Args:
-          path (str): The path to write to.
-          append (bool): If False (the default), replace any existing file
+          path: The path to write to.
+          append: If False (the default), replace any existing file
                with the given name. If True, append to any existing file.
 
         """
@@ -179,8 +163,7 @@ class Blob(object):
             f.write(self._data)
 
     @contextmanager
-    def tempfile(self, dir=None):
-        # type: (Optional[str]) -> Generator[str, None, None]
+    def tempfile(self, dir: Optional[str] = None) -> Generator[str, None, None]:
         """Context manager for writing data to a temporary file.
 
         The file is created when you enter the context manager, and
@@ -189,7 +172,7 @@ class Blob(object):
         Many libraries have annoying APIs which require that certificates be
         specified as filesystem paths, so even if you have already the data in
         memory, you have to write it out to disk and then let them read it
-        back in again. If you encouter such a library, you should probably
+        back in again. If you encounter such a library, you should probably
         file a bug. But in the mean time, this context manager makes it easy
         to give them what they want.
 
@@ -203,16 +186,14 @@ class Blob(object):
                requests.get("https://localhost/...", verify=ca_cert_path)
 
         Args:
-          dir (str or None): Passed to `tempfile.NamedTemporaryFile`.
+          dir: Passed to `tempfile.NamedTemporaryFile`.
 
         """
         # On Windows, you can't re-open a NamedTemporaryFile that's still
         # open. Which seems like it completely defeats the purpose of having a
         # NamedTemporaryFile? Oh well...
         # https://bugs.python.org/issue14243
-        # Type ignore temporarily needed for Python 2:
-        # https://github.com/python/typeshed/pull/5836
-        f = NamedTemporaryFile(suffix=".pem", dir=dir, delete=False)  # type: ignore[arg-type]
+        f = NamedTemporaryFile(suffix=".pem", dir=dir, delete=False)
         try:
             f.write(self._data)
             f.close()
@@ -222,29 +203,44 @@ class Blob(object):
             os.unlink(f.name)
 
 
-class CA(object):
-    """A certificate authority."""
+class KeyType(Enum):
+    """Type of the key used to generate a certificate"""
 
-    _certificate = None  # type: x509.Certificate
+    RSA = 0
+    ECDSA = 1
+
+    def _generate_key(self) -> CERTIFICATE_PRIVATE_KEY_TYPES:
+        if self is KeyType.RSA:
+            # key_size needs to be a least 2048 to be accepted
+            # on Debian and pressumably other OSes
+
+            return rsa.generate_private_key(
+                public_exponent=65537, key_size=2048
+            )
+        elif self is KeyType.ECDSA:
+            return ec.generate_private_key(ec.SECP256R1())
+        else:  # pragma: no cover
+            raise ValueError("Unknown key type")
+
+
+class CA:
+    """A certificate authority."""
+    _certificate: x509.Certificate
 
     def __init__(
         self,
-        parent_cert=None,
-        path_length=9,
-        organization_name=None,
-        organization_unit_name=None,
-    ):
-        # type: (Optional[CA], int, Optional[Text], Optional[Text]) -> None
+        parent_cert: Optional[CA] = None,
+        path_length: int = 9,
+        organization_name: Optional[str] = None,
+        organization_unit_name: Optional[str] = None,
+        key_type: KeyType = KeyType.ECDSA,
+    ) -> None:
         self.parent_cert = parent_cert
-        self._private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=_KEY_SIZE,
-            backend=default_backend()
-        )
+        self._private_key = key_type._generate_key()
         self._path_length = path_length
 
         name = _name(
-            organization_unit_name or u"Testing CA #" + random_text(),
+            organization_unit_name or "Testing CA #" + random_text(),
             organization_name=organization_name,
         )
         issuer = name
@@ -276,20 +272,17 @@ class CA(object):
             .sign(
                 private_key=sign_key,
                 algorithm=hashes.SHA256(),
-                backend=default_backend(),
             )
         )
 
     @property
-    def cert_pem(self):
-        # type: () -> Blob
+    def cert_pem(self) -> Blob:
         """`Blob`: The PEM-encoded certificate for this CA. Add this to your
         trust store to trust this CA."""
         return Blob(self._certificate.public_bytes(Encoding.PEM))
 
     @property
-    def private_key_pem(self):
-        # type: () -> Blob
+    def private_key_pem(self) -> Blob:
         """`Blob`: The PEM-encoded private key for this CA. Use this to sign
         other certificates from this CA."""
         return Blob(
@@ -300,8 +293,7 @@ class CA(object):
                 )
             )
 
-    def create_child_ca(self):
-        # type: () -> CA
+    def create_child_ca(self, key_type: KeyType = KeyType.ECDSA) -> "CA":
         """Creates a child certificate authority
 
         Returns:
@@ -314,19 +306,19 @@ class CA(object):
             raise ValueError("Can't create child CA: path length is 0")
 
         path_length = self._path_length - 1
-        return CA(parent_cert=self, path_length=path_length)
+        return CA(parent_cert=self, path_length=path_length, key_type=key_type)
 
-    def issue_cert(self, *identities, **kwargs):
-        # type: (Text, Optional[Union[Text, datetime.datetime]]) -> LeafCert
-        # PY3: (str, Optional[str], Optional[str], Optional[str], Optional[datetime.datetime]) -> LeafCert
-        """issue_cert(*identities, common_name=None, organization_name=None, \
-        organization_unit_name=None, not_after=None)
-
-        Issues a certificate. The certificate can be used for either servers
+    def issue_cert(
+        self,
+        *identities: str,
+        common_name: Optional[str] = None,
+        organization_name: Optional[str] = None,
+        organization_unit_name: Optional[str] = None,
+        not_after: Optional[datetime.datetime] = None,
+        key_type: KeyType = KeyType.ECDSA,
+    ) -> "LeafCert":
+        """Issues a certificate. The certificate can be used for either servers
         or clients.
-
-        All arguments must be text strings (``unicode`` on Python 2, ``str``
-        on Python 3).
 
         Args:
           identities: The identities that this certificate will be valid for.
@@ -365,44 +357,27 @@ class CA(object):
           not_after: Set the expiry date (notAfter) of the certificate. This
             argument type is `datetime.datetime`.
 
+          key_type: Set the type of key that is used for the certificate. By default this is an ECDSA based key.
+
         Returns:
           LeafCert: the newly-generated certificate.
 
         """
-        common_name = kwargs.pop("common_name", None)  # type: Optional[Text]  # type: ignore[assignment]
-        organization_name = kwargs.pop("organization_name", None)  # type: Optional[Text]  # type: ignore[assignment]
-        organization_unit_name = kwargs.pop("organization_unit_name", None)  # type: Optional[Text]  # type: ignore[assignment]
-        not_after = kwargs.pop("not_after", None)  # type: Optional[datetime.datetime]  # type: ignore[assignment]
-        if kwargs:
-            raise TypeError("unrecognized keyword arguments {}".format(kwargs))
-
         if not identities and common_name is None:
             raise ValueError(
                 "Must specify at least one identity or common name"
             )
 
-        key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=_KEY_SIZE,
-            backend=default_backend()
-        )
+        key = key_type._generate_key()
 
         ski_ext = self._certificate.extensions.get_extension_for_class(
             x509.SubjectKeyIdentifier)
-        ski = ski_ext.value
-        # Workaround a bug in cryptography 2.6 and earlier, where you have to
-        # pass the extension object instead of the actual SKI object
-        try:
-            # The new way
-            aki = x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ski)
-        except AttributeError:
-            # The old way
-            aki = x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ski_ext)  # type: ignore[arg-type]
+        aki = x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ski_ext.value)
 
         cert = (
             _cert_builder_common(
                 _name(
-                    organization_unit_name or u"Testing cert #" + random_text(),
+                    organization_unit_name or "Testing cert #" + random_text(),
                     organization_name=organization_name,
                     common_name=common_name,
                 ),
@@ -445,7 +420,6 @@ class CA(object):
             .sign(
                 private_key=self._private_key,
                 algorithm=hashes.SHA256(),
-                backend=default_backend(),
             )
         )
 
@@ -468,14 +442,12 @@ class CA(object):
     # For backwards compatibility
     issue_server_cert = issue_cert
 
-    def configure_trust(self, ctx):
-        # type: (Union[ssl.SSLContext, OpenSSL.SSL.Context]) -> None
+    def configure_trust(self, ctx: Union[ssl.SSLContext, OpenSSL.SSL.Context]) -> None:
         """Configure the given context object to trust certificates signed by
         this CA.
 
         Args:
-          ctx (ssl.SSLContext or OpenSSL.SSL.Context): The SSL context to be
-              modified.
+          ctx: The SSL context to be modified.
 
         """
         if isinstance(ctx, ssl.SSLContext):
@@ -493,27 +465,25 @@ class CA(object):
                 .format(ctx.__class__.__name__))
 
     @classmethod
-    def from_pem(cls, cert_bytes, private_key_bytes):
-        # type: (bytes, bytes) -> CA
+    def from_pem(cls, cert_bytes: bytes, private_key_bytes: bytes) -> "CA":
         """Build a CA from existing cert and private key.
 
         This is useful if your test suite has an existing certificate authority and
         you're not ready to switch completely to trustme just yet.
 
         Args:
-          cert_bytes (bytes): The bytes of the certificate in PEM format
-          private_key_bytes (bytes): The bytes of the private key in PEM format
+          cert_bytes: The bytes of the certificate in PEM format
+          private_key_bytes: The bytes of the private key in PEM format
         """
         ca = cls()
         ca.parent_cert = None
-        ca._certificate = x509.load_pem_x509_certificate(
-            cert_bytes, backend=default_backend())
-        ca._private_key = load_pem_private_key(
-            private_key_bytes, password=None, backend=default_backend())
+        ca._certificate = x509.load_pem_x509_certificate(cert_bytes)
+        ca._private_key = load_pem_private_key(private_key_bytes, password=None)  # type: ignore[assignment]
+
         return ca
 
 
-class LeafCert(object):
+class LeafCert:
     """A server or client certificate.
 
     This type has no public constructor; you get one by calling
@@ -532,21 +502,18 @@ class LeafCert(object):
           cert chain.
 
     """
-    def __init__(self, private_key_pem, server_cert_pem, chain_to_ca):
-        # type: (bytes, bytes, List[bytes]) -> None
+    def __init__(self, private_key_pem: bytes, server_cert_pem: bytes, chain_to_ca: List[bytes]) -> None:
         self.private_key_pem = Blob(private_key_pem)
         self.cert_chain_pems = [
             Blob(pem) for pem in [server_cert_pem] + chain_to_ca]
         self.private_key_and_cert_chain_pem = (
             Blob(private_key_pem + server_cert_pem + b''.join(chain_to_ca)))
 
-    def configure_cert(self, ctx):
-        # type: (Union[ssl.SSLContext, OpenSSL.SSL.Context]) -> None
+    def configure_cert(self, ctx: Union[ssl.SSLContext, OpenSSL.SSL.Context]) -> None:
         """Configure the given context object to present this certificate.
 
         Args:
-          ctx (ssl.SSLContext or OpenSSL.SSL.Context): The SSL context to be
-              modified.
+          ctx: The SSL context to be modified.
 
         """
         if isinstance(ctx, ssl.SSLContext):

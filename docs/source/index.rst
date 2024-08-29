@@ -11,9 +11,9 @@ works. It demonstrates a simple TLS server and client that connect to
 each other using :mod:`trustme`\-generated certs.
 
 This example requires `Trio <https://trio.readthedocs.io>`__ (``pip
-install -U trio``) and Python 3.5+. Note that while :mod:`trustme` is
+install -U trio``) and Python 3.8+. Note that while :mod:`trustme` is
 maintained by the Trio project, :mod:`trustme` is happy to work with
-any networking library, and also supports Python 2.
+any networking library.
 
 The key lines are the calls to :meth:`~CA.configure_trust`,
 :meth:`~LeafCert.configure_cert` – try commenting them out one at a
@@ -113,11 +113,47 @@ API reference
 
    .. automethod:: write_to_path
 
+.. autoclass:: KeyType
+   :members: RSA, ECDSA
+   :undoc-members:
 
 Change history
 ==============
 
 .. towncrier release notes start
+
+Trustme 1.1.0 (2023-07-10)
+--------------------------
+
+Features
+~~~~~~~~
+
+- Allow `os.PathLike` in typing of `Blob.write_to_path`. (`#606 <https://github.com/python-trio/trustme/issues/606>`__)
+- Add support for PyPy 3.10 and Python 3.12. (`#609 <https://github.com/python-trio/trustme/issues/609>`__)
+
+
+Deprecations and Removals
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Remove support for Python 3.7. (`#609 <https://github.com/python-trio/trustme/issues/609>`__)
+
+
+Trustme 1.0.0 (2023-04-24)
+------------------------------
+
+Features
+~~~~~~~~
+
+- Support for ECDSA keys in certificates and use them by default. The type of key used for certificates can be controlled by the ``key_type`` parameter on the multiple methods that generate certificates. ECDSA certificates as they can be generated significantly faster. (`#559 <https://github.com/python-trio/trustme/issues/559>`__)
+- Support for Python 3.10 and 3.11 (`#372 <https://github.com/python-trio/trustme/pull/372>`__, `574 <https://github.com/python-trio/trustme/pull/574>`__)
+
+
+
+Deprecations and Removals
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Remove support for Python 2. trustme now requires Python>=3.7 (CPython or PyPy). (`#346 <https://github.com/python-trio/trustme/issues/346>`__)
+
 
 Trustme 0.9.0 (2021-08-12)
 --------------------------
