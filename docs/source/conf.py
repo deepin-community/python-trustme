@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 #
 # trustme documentation build configuration file, created by
 # sphinx-quickstart on Tue Jul 18 01:46:01 2017.
@@ -49,11 +48,14 @@ extensions = [
 
 intersphinx_mapping = {
     "python": ('https://docs.python.org/3', None),
-    "pyopenssl": ('https://www.pyopenssl.org/en/stable/', None),
+    # https://github.com/pyca/pyopenssl/issues/1046
+    "pyopenssl": ('https://www.pyopenssl.org/en/20.0.1/', None),
     "trio": ('https://trio.readthedocs.io/en/latest/', None),
 }
 
 autodoc_member_order = "bysource"
+autodoc_typehints = "both"
+autodoc_typehints_description_target = "documented"
 
 # Tell sphinx to treat bare backticks like `foo` as :py:obj:`foo`
 default_role = 'py:obj'
@@ -90,7 +92,7 @@ release = version
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = "en"
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.

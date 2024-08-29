@@ -1,27 +1,15 @@
-# -*- coding: utf-8 -*-
-
 import argparse
 import os
 import trustme
 import sys
-
+from typing import List, Optional
 from datetime import datetime
 
-TYPE_CHECKING = False
-if TYPE_CHECKING:  # pragma: no cover
-    from typing import List, Optional
-
-# Python 2/3 annoyingness
-try:
-    unicode
-except NameError:  # pragma: no cover
-    unicode = str
 
 # ISO 8601
 DATE_FORMAT = '%Y-%m-%d'
 
-def main(argv=None):
-    # type: (Optional[List[str]]) -> None
+def main(argv: Optional[List[str]] = None) -> None:
     if argv is None:
         argv = sys.argv[1:]
 
@@ -58,22 +46,29 @@ def main(argv=None):
         action="store_true",
         help="Doesn't print out helpful information for humans.",
     )
+    parser.add_argument(
+        "-k",
+        "--key-type",
+        choices=list(t.name for t in trustme.KeyType),
+        default="ECDSA",
+    )
 
     args = parser.parse_args(argv)
     cert_dir = args.dir
-    identities = [unicode(identity) for identity in args.identities]
-    common_name = unicode(args.common_name[0]) if args.common_name else None
+    identities = [str(identity) for identity in args.identities]
+    common_name = str(args.common_name[0]) if args.common_name else None
     expires_on = None if args.expires_on is None else datetime.strptime(args.expires_on, DATE_FORMAT)
     quiet = args.quiet
+    key_type = trustme.KeyType[args.key_type]
 
     if not os.path.isdir(cert_dir):
-        raise ValueError("--dir={} is not a directory".format(cert_dir))
+        raise ValueError(f"--dir={cert_dir} is not a directory")
     if len(identities) < 1:
         raise ValueError("Must include at least one identity")
 
     # Generate the CA certificate
-    ca = trustme.CA()
-    cert = ca.issue_cert(*identities, common_name=common_name, not_after=expires_on)
+    ca = trustme.CA(key_type=key_type)
+    cert = ca.issue_cert(*identities, common_name=common_name, not_after=expires_on, key_type=key_type)
 
     # Write the certificate and private key the server should use
     server_key = os.path.join(cert_dir, "server.key")
@@ -90,9 +85,9 @@ def main(argv=None):
 
     if not quiet:
         idents = "', '".join(identities)
-        print("Generated a certificate for '{}'".format(idents))
+        print(f"Generated a certificate for '{idents}'")
         print("Configure your server to use the following files:")
-        print("  cert={}".format(server_cert))
-        print("  key={}".format(server_key))
+        print(f"  cert={server_cert}")
+        print(f"  key={server_key}")
         print("Configure your client to use the following files:")
-        print("  cert={}".format(client_cert))
+        print(f"  cert={client_cert}")
